@@ -2,7 +2,7 @@
 
 This folder turns the 19-slide deck *Commanding the Cloud with Google Compute
 Engine* into an Arabic narrated video lecture. The narration uses the
-instructor's cloned voice, and a lip-synced instructor window sits in the
+instructor's cloned voice, and a circular instructor window sits in the
 bottom-left corner.
 
 ```
@@ -14,7 +14,7 @@ bottom-left corner.
 │ [ up next ]  │                                            │
 │ ● waveform   ├────────────────────────────────────────────┤
 │ ┌──────────┐ │        Arabic subtitles (synced)           │
-│ │instructor│ │                                            │
+│  (  Alaa  )  │                                            │
 │ └──────────┘ │                                            │
 └──────────────┴────────────────────────────────────────────┘
 ```
@@ -57,16 +57,23 @@ bottom-left corner.
    ```bash
    python3 scripts/assemble_audio.py    # -> work/audio/slideNN.wav
    ```
-4. **Lip-sync (optional)**: for a chunk, call `generate_video` with `wan2_7`
-   at 720p and 3:4, passing `instructor_3x4.jpg` as `start_image` and the
+4. **Instructor portrait**: the circular window and the intro/outro cards use
+   `work/src/instructor.jpg`. For this render it's a square head-and-shoulders
+   portrait made with Higgsfield **Nano Banana 2** (`nano_banana_2`, 1:1, 1K)
+   from the Giza photo. Nano Banana returns a circle on a white square, so the
+   image is cropped 6% inward before use. The name under the window comes
+   from `instructor_name` in `narration/narration_ar.json`; leave
+   `instructor_role` empty to show the name on its own.
+5. **Lip-sync (optional)**: for a chunk, call `generate_video` with `wan2_7`
+   at 720p and 1:1, passing the instructor portrait as `start_image` and the
    chunk's TTS job as `audio_references`. Set the duration to the chunk length
    rounded up. Save the clip as `work/pip/slideNN_partK.mp4`. This costs about
-   1.5 credits per second. This render lip-syncs only the opening sentence;
-   for the rest of the video the instructor window shows the photo with a
-   slow "breathing" zoom. Every additional clip you add is picked up
+   1.5 credits per second. The current render has no lip-sync clips, so the
+   instructor window shows the portrait with a slow "breathing" zoom
+   throughout. Every clip you add is picked up
    automatically, and `assemble_audio.py` pads that chunk to the clip's
    length so the mouth stays in sync.
-5. **Render**
+6. **Render**
    ```bash
    python3 scripts/build_video.py              # -> output/GCP_Compute_Engine_AR.mp4
    python3 scripts/build_video.py --preview    # placeholder voice, to check layout and timing

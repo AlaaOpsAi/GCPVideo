@@ -40,8 +40,10 @@ LEAD, TAIL, XFADE = 0.5, 0.7, 0.5          # seconds of silence around speech
 SLIDE_BOX = (396, 26, 1500, 837)            # x, y, w, h
 SUB_BOX = (396, 884, 1500, 170)
 COL_X, COL_W = 24, 348
-PIP_BOX = (24, 590, 348, 464)               # 3:4 instructor window
-WAVE_BOX = (24, 528, 348, 40)
+PIP_D = 290                                  # circular instructor window
+PIP_BOX = (24 + (348 - PIP_D) // 2, 640, PIP_D, PIP_D)
+WAVE_BOX = (24, 568, 348, 40)
+RING = [(66, 133, 244), (234, 67, 53), (251, 188, 5), (52, 168, 83)]  # ring segments
 
 # Palette (matches the deck's dark-navy / electric-blue look)
 BG_TOP, BG_BOTTOM = (8, 13, 26), (14, 24, 46)
@@ -215,31 +217,42 @@ def render_slide_canvas(idx, total, slide_png, meta, course, base, next_section)
     d.ellipse((right - 12, wy - 30, right, wy - 18), fill=(255, 82, 82, 255))
     draw_rtl(d, (right - 20, wy - 38), "يتحدث الآن", font(F_BODY, 20), MUTED)
 
-    # Instructor window frame glow
+    # Soft glow behind the circular instructor window
     px, py, pw, ph = PIP_BOX
-    glow(im, (px - 4, py - 4, pw + 8, ph + 8), 26, ACCENT, 16, 150)
-    d.rounded_rectangle((px - 3, py - 3, px + pw + 2, py + ph + 2), radius=26,
-                        outline=ACCENT + (230,), width=3)
+    glow(im, (px - 14, py - 14, pw + 28, ph + 28), pw // 2 + 14, ACCENT, 22, 120)
     return im.convert("RGB")
 
 
+def label_line(name, role):
+    return f"{name}  ·  {role}" if role else name
+
+
 def render_nametag(name, role):
-    """Full-canvas transparent overlay with the name pill over the PiP."""
+    """Full-canvas overlay: segmented colour ring around the circular PiP and
+    the instructor's name underneath."""
     im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
     px, py, pw, ph = PIP_BOX
-    box = (px + 12, py + ph - 64, px + pw - 12, py + ph - 12)
-    d.rounded_rectangle(box, radius=26, fill=(8, 14, 30, 215),
-                        outline=ACCENT + (120,), width=2)
-    label = f"{name}  ·  {role}"
-    draw_rtl(d, ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2), label,
-             font(F_BODY_B, 22), TEXT, anchor="mm")
+    # thin dark rim hides the mask edge, then four coloured arcs with gaps
+    d.ellipse((px - 3, py - 3, px + pw + 3, py + ph + 3), outline=(10, 16, 30, 255), width=6)
+    r = 12
+    box = (px - r, py - r, px + pw + r, py + ph + r)
+    for k, col in enumerate(RING):
+        start = -90 + k * 90 + 6
+        d.arc(box, start, start + 78, fill=col + (255,), width=7)
+    d.ellipse((px - r - 9, py - r - 9, px + pw + r + 9, py + ph + r + 9),
+              outline=ACCENT + (60,), width=2)
+    cx = px + pw // 2
+    d.text((cx, py + ph + 52), label_line(name, role), font=font(F_BODY_B, 32),
+           fill=TEXT + (255,), anchor="mm")
     return im
 
 
 def render_pip_mask():
     _, _, pw, ph = PIP_BOX
-    return rounded_mask((pw, ph), 24).convert("RGB")
+    m = Image.new("L", (pw, ph), 0)
+    ImageDraw.Draw(m).ellipse((0, 0, pw - 1, ph - 1), fill=255)
+    return m.convert("RGB")
 
 
 def render_caption(text):
@@ -265,10 +278,7 @@ def render_card(course, subtitle, name, role, photo, kind):
     glow(im, (cx - size // 2 - 10, cy - size // 2 - 10, size + 20, size + 20),
          size // 2, ACCENT, 26, 170)
     ph = Image.open(photo).convert("RGB")
-    s = min(ph.size)
-    face = ph.crop((int(ph.width * 0.10), int(ph.height * 0.14),
-                    int(ph.width * 0.10) + int(s * 0.80),
-                    int(ph.height * 0.14) + int(s * 0.80))).resize((size, size), Image.LANCZOS)
+    face = fit_crop(ph, 1.0).resize((size, size), Image.LANCZOS)
     m = Image.new("L", (size, size), 0)
     ImageDraw.Draw(m).ellipse((0, 0, size - 1, size - 1), fill=255)
     im.paste(face, (cx - size // 2, cy - size // 2), m)
@@ -279,8 +289,8 @@ def render_card(course, subtitle, name, role, photo, kind):
     title, sub = (course, subtitle) if kind == "intro" else subtitle
     draw_rtl(d, (W // 2, 650), title, font(F_TITLE, 64), TEXT, anchor="mm")
     draw_rtl(d, (W // 2, 740), sub, font(F_BODY, 34), ACCENT_2, anchor="mm")
-    draw_rtl(d, (W // 2, 850), f"{name}  ·  {role}", font(F_BODY_B, 30),
-             MUTED, anchor="mm")
+    d.text((W // 2, 850), label_line(name, role), font=font(F_BODY_B, 34),
+           fill=MUTED + (255,), anchor="mm")
     return im.convert("RGB")
 
 
@@ -356,17 +366,26 @@ def placeholder_audio(n, text):
     return dst
 
 
+def fit_crop(im, aspect, top_bias=0.10):
+    """Largest crop of `aspect` (w/h), centred horizontally, biased to the top."""
+    iw, ih = im.size
+    if iw / ih > aspect:
+        cw = int(ih * aspect)
+        x = (iw - cw) // 2
+        return im.crop((x, 0, x + cw, ih))
+    ch = int(iw / aspect)
+    top = max(0, min(ih - ch, int((ih - ch) * top_bias)))
+    return im.crop((0, top, iw, top + ch))
+
+
 def still_pip(dur):
     """Instructor photo with a slow 'breathing' zoom, `dur` seconds long."""
     _, _, pw, ph = PIP_BOX
     still = BUILD / "pip_still.jpg"
     if not still.exists():
         im = Image.open(WORK / "src" / "instructor.jpg").convert("RGB")
-        iw, ih = im.size
-        ch = int(iw * 4 / 3)
-        top = max(0, min(ih - ch, int(ih * 0.10)))     # same crop as the lip-sync start frame
-        im.crop((0, top, iw, top + ch)).resize((pw * 3, ph * 3),
-                                               Image.LANCZOS).save(still, quality=95)
+        fit_crop(im, pw / ph).resize((pw * 3, ph * 3),
+                                      Image.LANCZOS).save(still, quality=95)
     frames = int(dur * FPS) + 1
     # oversampled input avoids zoompan jitter
     return ["-loop", "1", "-i", str(still)], (
